@@ -41,12 +41,25 @@ curl -X POST https://YOUR-SITE/api/admin/paid -H "x-admin-key: $ADMIN_KEY" -H "c
 
 ## Environment variables
 
+Set these in your host (Railway: service → Variables). Secrets go here only, never in the repo.
+
 | var | purpose |
 |---|---|
-| `DB_PATH` | Where `data.json` lives (point at a persistent volume, e.g. `/data/data.json`) |
-| `FEE_WALLET`, `RPC_URL` | Override the config values |
-| `PAYOUT_SECRET_KEY` | Turns on automatic payouts |
+| `DB_PATH` | Where `data.json` lives. Point it at a persistent volume (e.g. `/data/data.json`) or all data is wiped on every redeploy |
+| `FEE_WALLET` | Public address of the payout wallet. The site counts SOL arriving here as fees |
+| `RPC_URL` | Solana RPC (Helius/QuickNode). The public one is rate-limited |
+| `PAYOUT_SECRET_KEY` | Private key of the payout wallet. Turns on automatic payouts. Use a dedicated wallet |
+| `CONTRACT_ADDRESS` | Coin CA shown at the top. Survives redeploys |
+| `OWNER_WALLET` | Wallet allowed to set the CA from the site (defaults to `ownerWallet` in `config.json`) |
 | `ADMIN_KEY` | Enables `/api/admin/paid` and `/api/admin/delete` (send as `x-admin-key`) |
+
+## Contract address
+
+Either set `CONTRACT_ADDRESS`, or connect the owner wallet on the site: an OWNER bar appears where you can paste or clear the CA. Only the owner wallet can use it, and it can't touch votes or prizes. The saved CA lives in `data.json`, so it needs the volume.
+
+## Rounds
+
+Each round lasts `roundMinutes`. When it ends, the top-voted drawing wins, the round's votes and every other drawing are deleted, and the winner's drawing is kept. The board starts empty each round.
 
 Remove an offensive drawing: `curl -X POST https://YOUR-SITE/api/admin/delete -H "x-admin-key: $ADMIN_KEY" -H "content-type: application/json" -d '{"drawingId":12}'`
 
