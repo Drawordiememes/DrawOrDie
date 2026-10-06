@@ -183,6 +183,12 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '700kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+// Fallback: if the public/ folder didn't make it into the repo, serve a loose index.html next to server.js.
+// (Only that one file is served, never the rest of the folder.)
+app.get('/', (req, res, next) => {
+  const f = path.join(__dirname, 'index.html');
+  return fs.existsSync(f) ? res.sendFile(f) : next();
+});
 
 app.get('/api/nonce', limit(30, 60e3), (req, res) => {
   const nonce = crypto.randomBytes(16).toString('hex');
