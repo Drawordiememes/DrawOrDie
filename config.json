@@ -9,5 +9,7 @@
   "rpcUrl": "https://api.mainnet-beta.solana.com",
   "feePollSeconds": 10,
   "port": 3000,
-  "maxImageBytes": 400000
+  "maxImageBytes": 400000,
+  "contractAddress": "",
+  "ownerWallet": "D8XLyXdsrcHYBuuwjVe8BAK1WUmPPQs8xRvzPeBPJw4C"
 }

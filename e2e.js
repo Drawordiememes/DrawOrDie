@@ -27,7 +27,8 @@ async function login(kp) {
 }
 
 (async () => {
-  const env = { ...process.env, PORT, DB_PATH: DB, ROUND_SECONDS: '10', FEE_POLL_SECONDS: '1', FAKE_FEES: '1', FAKE_SENDER: '1', ADMIN_KEY: 'testkey123' };
+  const ownerKp = nacl.sign.keyPair();
+  const env = { ...process.env, OWNER_WALLET: bs58.encode(ownerKp.publicKey), PORT, DB_PATH: DB, ROUND_SECONDS: '10', FEE_POLL_SECONDS: '1', FAKE_FEES: '1', FAKE_SENDER: '1', ADMIN_KEY: 'testkey123' };
   // speed up the fee poll for the test by using a tiny config override via a copy of config is overkill; poll interval is 10s so we also trigger by waiting.
   const srv = spawn('node', [proj + '/server.js'], { env, cwd: proj, stdio: 'inherit' });
   await sleep(1200);
@@ -39,6 +40,19 @@ async function login(kp) {
     const n = (await call('/api/nonce')).body;
     const bad = nacl.sign.detached(Buffer.from(n.message), b.secretKey);
     assert((await call('/api/login', { method: 'POST', body: JSON.stringify({ wallet: A.wallet, nonce: n.nonce, signature: Buffer.from(bad).toString('base64') }) })).status === 401, 'forged signature rejected');
+
+    // owner can set the CA; nobody else can
+    const O = await login(ownerKp);
+    const GOOD = bs58.encode(nacl.sign.keyPair().publicKey);
+    assert((await call('/api/owner/ca', { method: 'POST', body: JSON.stringify({ ca: GOOD }) }, A.token)).status === 403, 'non-owner cannot set the CA');
+    assert((await call('/api/owner/ca', { method: 'POST', body: JSON.stringify({ ca: GOOD }) })).status === 403, 'signed-out visitor cannot set the CA');
+    assert((await call('/api/owner/ca', { method: 'POST', body: JSON.stringify({ ca: 'not-an-address!' }) }, O.token)).status === 400, 'owner CA is validated');
+    assert((await call('/api/owner/ca', { method: 'POST', body: JSON.stringify({ ca: GOOD }) }, O.token)).status === 200, 'owner can set the CA');
+    let so = (await call('/api/state', {}, O.token)).body;
+    assert(so.ca === GOOD && so.me.isOwner === true, 'state shows the CA and flags the owner');
+    assert((await call('/api/state', {}, A.token)).body.me.isOwner === false, 'other wallets are not flagged as owner');
+    await call('/api/owner/ca', { method: 'POST', body: JSON.stringify({ ca: '' }) }, O.token);
+    assert((await call('/api/state')).body.ca === null, 'owner can clear the CA');
 
     const open = await call('/api/state');
     assert(open.status === 200 && open.body.me === null && open.body.round.end - open.body.round.start === 10000, 'state viewable without a wallet; round length honoured');
@@ -68,6 +82,10 @@ async function login(kp) {
     assert(st.round.id >= 2, 'round rolled over automatically');
     const h = st.history.find((r) => r.id === 1);
     assert(h && h.winner.name === 'rug' && h.winner.wallet === A.wallet && h.winner.votes === 2, 'round 1 winner = rug / wallet A with 2 votes');
+    assert((await fetch(base + '/img/' + d2.body.id)).status === 404, 'losing drawing is deleted when the round closes');
+    assert((await fetch(base + '/img/' + d1.body.id)).status === 200, 'winning drawing is kept');
+    const dbc = JSON.parse(fs.readFileSync(DB, 'utf8'));
+    assert(!dbc.votes.some((v) => v.round === 1), "round 1's votes are cleared");
     assert(paid && paid.wallet === A.wallet && paid.round === 1 && paid.tx.startsWith('FAKE'), 'auto-pay recorded a payout with a tx signature');
     const db = JSON.parse(fs.readFileSync(DB, 'utf8'));
     const r1 = db.rounds.find((r) => r.id === 1);

@@ -8,6 +8,8 @@ const bs58 = require('bs58');
 const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 if (process.env.RPC_URL) cfg.rpcUrl = process.env.RPC_URL;
 if (process.env.FEE_WALLET) cfg.feeWallet = process.env.FEE_WALLET;
+if (process.env.CONTRACT_ADDRESS) cfg.contractAddress = process.env.CONTRACT_ADDRESS;
+const ownerWallet = () => process.env.OWNER_WALLET || cfg.ownerWallet || '';
 if (process.env.MAX_PAID_ROUNDS) cfg.maxPaidRounds = Number(process.env.MAX_PAID_ROUNDS);
 // Prize promo: only the first `maxPaidRounds` rounds that earn a prize pay out (0 = no limit).
 const promoUsed = (d, except) => d.rounds.filter((r) => r.closed && r.prize > 0 && r !== except).length;
@@ -48,6 +50,10 @@ function closeRound(d, round) {
   round.winner = top ? { drawingId: top.id, wallet: top.wallet, name: top.name, votes: counts.get(top.id) || 0 } : null;
   round.prize = round.winner ? Math.min(Math.floor((round.fees || 0) * cfg.feeShare), prizeCap()) : 0;
   if (cfg.maxPaidRounds > 0 && promoUsed(d, round) >= cfg.maxPaidRounds) round.prize = 0; // promo is over
+  // Clear the board: drop this round's votes and every drawing except the winner's (kept for the record).
+  const keep = round.winner ? round.winner.drawingId : null;
+  d.drawings = d.drawings.filter((x) => x.round !== round.id || x.id === keep);
+  d.votes = d.votes.filter((v) => v.round !== round.id);
 }
 
 // Lazily close/open rounds. Fees from a round nobody entered carry into the next one.
@@ -247,6 +253,7 @@ app.get('/api/state', (req, res) => {
   const ended = promoEnded(d);
   res.json({
     promo: { limit: cfg.maxPaidRounds || 0, used: promoUsed(d), ended },
+    ca: d.ca || cfg.contractAddress || null,
     siteName: cfg.siteName,
     round: { id: round.id, start: round.start, end: round.end },
     now: Date.now(),
@@ -260,7 +267,7 @@ app.get('/api/state', (req, res) => {
     paidTotal: d.payouts.reduce((s, p) => s + p.lamports, 0),
     payouts,
     drawings,
-    me: wallet ? { wallet, myVote, myDrawing } : null,
+    me: wallet ? { wallet, myVote, myDrawing, isOwner: !!ownerWallet() && wallet === ownerWallet() } : null,
     history,
   });
 });
@@ -313,6 +320,22 @@ app.post('/api/vote', limit(30, 60e3), (req, res) => {
   d.votes.push({ round: round.id, wallet, ip, drawingId, at: Date.now() });
   save(d);
   res.json({ ok: true });
+});
+
+/* ---------- owner (the wallet in ownerWallet / OWNER_WALLET, after signing in) ---------- */
+// Set or clear the contract address shown on the site. Owner wallet only; it can't touch votes or prizes.
+app.post('/api/owner/ca', limit(10, 60e3), (req, res) => {
+  const w = authWallet(req);
+  if (!w || !ownerWallet() || w !== ownerWallet()) return res.status(403).json({ error: 'Owner wallet only' });
+  const ca = String((req.body || {}).ca || '').trim();
+  const d = load();
+  if (!ca) { delete d.ca; save(d); return res.json({ ok: true, ca: null }); }
+  let okAddr = false;
+  try { okAddr = bs58.decode(ca).length === 32; } catch {}
+  if (!okAddr) return res.status(400).json({ error: 'That is not a valid Solana address' });
+  d.ca = ca;
+  save(d);
+  res.json({ ok: true, ca });
 });
 
 /* ---------- admin (set ADMIN_KEY in the environment to enable) ---------- */
