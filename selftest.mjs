@@ -177,4 +177,31 @@ t('workflow copy matches the real workflow', () => {
   assert.equal(readFileSync(a, 'utf8'), readFileSync(b, 'utf8'));
 });
 
+// ---- the web server (used by `npm start` on hosts like Railway) ----
+{
+  const { createSiteServer } = await import('./serve.mjs');
+  const server = createSiteServer();
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const get = async (p) => { const r = await fetch(base + p); return { status: r.status, text: await r.text() }; };
+  const ta = async (name, fn) => { try { await fn(); passed++; console.log('ok   ' + name); } catch (e) { console.error('FAIL ' + name + '\n     ' + e.message); process.exitCode = 1; } };
+  await ta('server: serves the page, data and health check', async () => {
+    assert.match((await get('/')).text, /Hourly Wire/);
+    assert.equal((await get('/healthz')).status, 200);
+    assert.ok(JSON.parse((await get('/data.json')).text).items.length > 0);
+  });
+  await ta('server: cannot read files outside site/', async () => {
+    const r = await fetch(base + '/%2e%2e/package.json');
+    assert.notEqual(r.status, 200);
+    const sock = await new Promise((res) => {
+      import('node:net').then(({ default: net }) => {
+        const c = net.connect(server.address().port, '127.0.0.1', () => c.write('GET /../package.json HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'));
+        let d = ''; c.on('data', (x) => (d += x)); c.on('close', () => res(d));
+      });
+    });
+    assert.doesNotMatch(sock.split('\r\n')[0], /200/);
+  });
+  server.close();
+}
+
 console.log(`\n${passed} checks passed${process.exitCode ? ', some FAILED' : ''}`);

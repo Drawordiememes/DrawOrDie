@@ -4,8 +4,9 @@
 //
 //   node scripts/update.mjs            real run
 //   node scripts/update.mjs --demo     sample data, no network (to preview the page)
-import { readFile, writeFile, mkdir, appendFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile, writeFile, mkdir, appendFile, rename } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { FEEDS } from './feeds.mjs';
 import { parseFeed, splitPublisher, buildItems, SPECIES_EMOJI } from './lib.mjs';
 import { maybeNotify } from './notify.mjs';
@@ -100,30 +101,33 @@ function demoRaw(now) {
   return { raw, sources };
 }
 
-async function loadPrev() {
-  try { return JSON.parse(await readFile(PREV_FILE, 'utf8')); } catch { return null; }
+async function loadPrev(prevFile) {
+  try { return JSON.parse(await readFile(prevFile, 'utf8')); } catch { return null; }
 }
 
-async function main() {
+// Fetches everything, writes the data file, sends alerts. Throws if every source failed
+// (the existing data file is then left as it was).
+export async function runUpdate({ demo = DEMO, out = OUT, prevFile = PREV_FILE } = {}) {
   const now = Date.now();
-  const prev = await loadPrev();
-  const { raw, sources } = DEMO ? demoRaw(now) : await collect();
+  const prev = await loadPrev(prevFile);
+  const { raw, sources } = demo ? demoRaw(now) : await collect();
 
-  if (!DEMO && raw.length === 0) {
-    console.error('Every feed failed, so the existing site was left untouched.');
-    process.exit(1);
+  if (!demo && raw.length === 0) {
+    throw new Error('Every feed failed, so the existing site was left untouched.');
   }
 
   const items = buildItems(raw, now, prev);
   const data = {
     generatedAt: new Date(now).toISOString(),
-    demo: DEMO || undefined,
+    demo: demo || undefined,
     speciesMeta: SPECIES_EMOJI,
     sources,
     items,
   };
-  await mkdir(dirname(OUT), { recursive: true });
-  await writeFile(OUT, JSON.stringify(data));
+  await mkdir(dirname(out), { recursive: true });
+  // write then rename, so a visitor never gets a half-written file
+  await writeFile(out + '.tmp', JSON.stringify(data));
+  await rename(out + '.tmp', out);
 
   const ok = sources.filter((s) => s.ok).length;
   const inHour = items.filter((i) => now - Date.parse(i.published) <= 3600e3);
@@ -135,10 +139,14 @@ async function main() {
     await appendFile(process.env.GITHUB_STEP_SUMMARY, `### Hourly update\n${line}\n${failed ? '\nFailed sources:\n' + failed + '\n' : ''}`);
   }
 
-  if (!DEMO) {
+  if (!demo) {
     const r = await maybeNotify(items);
     console.log(r.sent ? `Alert sent via ${r.via.join(', ')} (${r.count} stories)` : `No alert: ${r.reason}`);
   }
+  return { line, data };
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+// Run directly (node scripts/update.mjs), but not when imported by the server
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  runUpdate().catch((e) => { console.error(e.message || e); process.exit(1); });
+}

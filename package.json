@@ -1,11 +1,12 @@
 {
   "name": "hourly-wire",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Hourly auto-updating site of animal, rescue, funny and space stories.",
   "engines": { "node": ">=18" },
   "scripts": {
+    "start": "node scripts/server.mjs",
     "update": "node scripts/update.mjs",
     "demo": "node scripts/update.mjs --demo",
     "test": "node scripts/selftest.mjs",

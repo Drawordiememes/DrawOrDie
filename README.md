@@ -11,9 +11,17 @@ A website that rebuilds itself every hour from news feeds and shows:
 
 You can look at the past hour, 3, 6, 24 or 48 hours. Stories that are new since the last update get a **NEW** badge. The same story from several outlets is grouped into one card ("+3 more outlets"). Named animals ("Jimothy", "Pudding") are pulled out of headlines and shown as chips you can click to copy. Upsetting stories (deaths, cruelty, attacks) are hidden by default, with a checkbox to show them.
 
-There is nothing to host or pay for. GitHub runs the update on a schedule and publishes the page with GitHub Pages.
+There are two ways to run it. **Pick one, not both.**
 
-## Set it up (about 10 minutes)
+| | A. GitHub Pages (recommended) | B. Railway (or any host that runs Node) |
+|---|---|---|
+| Cost | Free | Uses the host's credits or plan, since it runs 24/7 |
+| How it updates | GitHub runs a scheduled job each hour | The server refreshes itself each hour |
+| Needs | A public GitHub repo | A host that runs `npm start` |
+
+## A. GitHub Pages (about 10 minutes)
+
+GitHub runs the update on a schedule and publishes the page with GitHub Pages. There is nothing to host or pay for.
 
 1. **Make a new repository** on GitHub. Make it **public** (GitHub Pages is free for public repositories).
 2. **Upload everything in this folder** to it. On the repo page choose *Add file → Upload files* and drag the contents in.
@@ -23,7 +31,20 @@ There is nothing to host or pay for. GitHub runs the update on a schedule and pu
 
 From then on it updates by itself at about 7 minutes past every hour.
 
+## B. Railway (or another host that runs Node)
+
+The project includes a small server, so a host that runs `npm start` can run it directly. It shows the page and refreshes the stories at 7 minutes past every hour by itself, and also once when it starts.
+
+1. Put the files in a GitHub repo and create a Railway service from that repo. No build settings are needed: Railway runs `npm start`.
+2. In the service, open *Settings → Networking* and generate a public domain.
+3. Alerts (optional): add the variables `NTFY_TOPIC` or `DISCORD_WEBHOOK_URL` in the service's *Variables* tab, plus `SITE_URL` set to your Railway domain so tapping an alert opens it. `NOTIFY_TAGS` and `NOTIFY_EMPTY` work the same way as below.
+4. **Delete the `.github` folder from the repo** (or turn the workflow off in the Actions tab). Otherwise GitHub keeps trying to publish to GitHub Pages and emails you about the failed runs.
+
+Visit `/healthz` on your domain to check the server is up. The first page load after a deploy shows sample data for about a minute, until the first refresh finishes. If a deploy fails, open *View logs* and read the last few lines.
+
 ## Get told every hour (optional)
+
+On Pages these are repo *secrets and variables* (below). On Railway they are the service's *Variables*.
 
 The website shows the latest, but it can't tap you on the shoulder. For that, add one of these as a secret (*Settings → Secrets and variables → Actions → New repository secret*):
 
@@ -63,8 +84,9 @@ You need Node 18 or newer. There is nothing to install.
 
 ```
 node scripts/update.mjs --demo   # build sample data
-node scripts/serve.mjs           # open http://localhost:8080
+node scripts/serve.mjs           # open http://localhost:8080 (page only)
 node scripts/update.mjs          # fetch the real feeds
+node scripts/server.mjs          # page plus hourly refresh (what `npm start` runs)
 node scripts/selftest.mjs        # run the checks
 ```
 
