@@ -1,21 +1,14 @@
 {
-  "name": "drawcontest",
-  "version": "2.0.0",
-  "description": "Memecoin drawing contest: draw, vote with your wallet, winner gets a cut of creator fees",
-  "main": "server.js",
+  "name": "hourly-wire",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hourly auto-updating site of animal, rescue, funny and space stories.",
+  "engines": { "node": ">=18" },
   "scripts": {
-    "start": "node server.js",
-    "payout": "node payout.js",
-    "test": "node test/e2e.js"
-  },
-  "dependencies": {
-    "@solana/web3.js": "^1.95.3",
-    "bs58": "^5.0.0",
-    "express": "^4.19.2",
-    "tweetnacl": "^1.0.3"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "private": true
+    "update": "node scripts/update.mjs",
+    "demo": "node scripts/update.mjs --demo",
+    "test": "node scripts/selftest.mjs",
+    "serve": "node scripts/serve.mjs"
+  }
 }

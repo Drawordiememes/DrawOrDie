@@ -1,80 +1,73 @@
-# Draw or Die: memecoin drawing contest
+# Hourly Wire
 
-Anyone can connect a Solana wallet (signature only, no transaction), draw on a canvas, and vote. Every 5 minutes the top-voted drawing wins 15% of the creator fees that arrived during that round. Payouts show up in a bar at the top of the page with a Solscan link.
+A website that rebuilds itself every hour from news feeds and shows:
 
-No token is needed to play.
+- **Animals**: anything animal-related, with a strip of which animals are in the news right now
+- **Rescues & saving**: rescues, shelters, strandings, petitions and campaigns to save animals
+- **Funny**: odd and funny stories
+- **Space**: NASA, launches, comets, eclipses and more
+- **Good news**: heartwarming stories
+- **Everything**: all of it together
 
-## Run it
+You can look at the past hour, 3, 6, 24 or 48 hours. Stories that are new since the last update get a **NEW** badge. The same story from several outlets is grouped into one card ("+3 more outlets"). Named animals ("Jimothy", "Pudding") are pulled out of headlines and shown as chips you can click to copy. Upsetting stories (deaths, cruelty, attacks) are hidden by default, with a checkbox to show them.
 
-```
-npm install
-npm start          # http://localhost:3000
-```
+There is nothing to host or pay for. GitHub runs the update on a schedule and publishes the page with GitHub Pages.
 
-## Settings (`config.json`)
+## Set it up (about 10 minutes)
 
-| key | what it does |
+1. **Make a new repository** on GitHub. Make it **public** (GitHub Pages is free for public repositories).
+2. **Upload everything in this folder** to it. On the repo page choose *Add file → Upload files* and drag the contents in.
+   - The hidden `.github` folder has to come along. If you don't see `.github/workflows/update.yml` in the repo afterwards, choose *Add file → Create new file*, type `.github/workflows/update.yml` as the name, and paste in the contents of `workflow-copy/update.yml`.
+3. **Turn on Pages**: *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+4. **Run it once**: open the *Actions* tab, click *Update site* on the left, then *Run workflow*. (If GitHub asks you to enable workflows, say yes.) After a minute or two your site is live at `https://YOUR-USERNAME.github.io/YOUR-REPO/`.
+
+From then on it updates by itself at about 7 minutes past every hour.
+
+## Get told every hour (optional)
+
+The website shows the latest, but it can't tap you on the shoulder. For that, add one of these as a secret (*Settings → Secrets and variables → Actions → New repository secret*):
+
+**Phone notifications with ntfy (free)**
+1. Install the **ntfy** app (iPhone or Android).
+2. In the app, subscribe to a topic with a long random name, for example `critters-8f3k2x9qv7m1`. Anyone who knows the name can read it, so don't use something guessable.
+3. Add a repository secret named `NTFY_TOPIC` with that same name.
+
+**Discord**: create a webhook in a channel (*Channel settings → Integrations → Webhooks*) and save its URL as a secret named `DISCORD_WEBHOOK_URL`.
+
+Each hour you get a short message such as "7 new animal stories", the animals that are buzzing, and the top stories. If nothing new turned up, it stays quiet. To change that, add repository **variables** (*Settings → Secrets and variables → Actions → Variables*):
+
+| Variable | What it does |
 |---|---|
-| `roundMinutes` | Round length (5) |
-| `feeShare` | Share of that round's fees the winner gets (0.15) |
-| `feeWallet` | Wallet where your creator fees land. The site watches its SOL balance and counts every increase as fees for the current round. Can also be set with the `FEE_WALLET` env var |
-| `maxPayoutSol` | Safety cap on any single payout |
-| `maxPerIpPerRound` | Max votes and drawings per network per round (speed bump against vote farming) |
-| `rpcUrl` | Solana RPC. Prefer the `RPC_URL` env var so the key isn't in the repo. The public RPC is rate-limited |
+| `NOTIFY_TAGS` | Which sections can trigger an alert. Default `animals`. Try `animals,space` or `animals,rescue,funny`. |
+| `NOTIFY_EMPTY` | Set to `1` to also get a message when nothing is new. |
+| `SITE_URL` | Only needed if you use a custom domain. |
 
-### How fees are counted
+## Change what it watches
 
-The site only sees SOL arriving in `feeWallet`. Claim your creator fees into that wallet (every round or so) and the live "fees this round" number goes up. Money leaving the wallet never reduces a prize. If a round has no entries, its fees roll into the next round.
+- **Sources**: edit `scripts/feeds.mjs`. Any RSS or Atom link works. Google News searches are easy to add or change there.
+- **What counts as an animal, a rescue, funny, space**: the word lists are near the top of `scripts/lib.mjs`.
+- **Look**: `site/index.html` is one plain file.
 
-## Paying winners
+## Things worth knowing
 
-**Automatic (needed for 5-minute rounds, since that is 288 payouts a day):**
-set the env var `PAYOUT_SECRET_KEY` to the base58 private key of a wallet that holds the SOL to pay out. Use a dedicated wallet holding only your creator fees. Never your main wallet. The server sends the prize when a round closes and records the signature, so the paid bar links to the real transaction. Each round is marked "sending" before the transfer, so a crash or timeout can never pay twice. If a transfer fails, the round shows as failed and nothing retries by itself. Check the wallet on Solscan first, then pay by hand.
+- **"Hourly" means about hourly.** GitHub's scheduler can run late, sometimes by 10 to 30 minutes when it is busy.
+- **Some sources will fail sometimes.** Reddit often blocks cloud servers, and websites change their feed addresses. The page lists every source and whether it worked (*"x of y sources responded"* at the bottom), and the job keeps going with the rest. If every source fails, the old page stays up instead of going blank.
+- **Times come from each feed.** A story's "past hour" status is only as good as the time the publisher gave.
+- **GitHub pauses scheduled jobs in public repos after 60 days with no commits.** The workflow adds an empty commit once a month to prevent that. If the page ever shows "last update was N hours ago", check the Actions tab.
+- **It does not read X/Twitter.** X has no free feed. News sites and Reddit cover most viral animal stories within the hour.
+- **The page starts with sample data** (a banner says so) until the first real update runs.
 
-**Manual:** leave `PAYOUT_SECRET_KEY` unset. Rounds show "awaiting payout". Run `node payout.js` to list what is owed, send it from your wallet, then record it:
+## Try it on your own computer
+
+You need Node 18 or newer. There is nothing to install.
 
 ```
-node payout.js --round 41 --mark-paid <txSignature>
-# or, on a hosted server:
-curl -X POST https://YOUR-SITE/api/admin/paid -H "x-admin-key: $ADMIN_KEY" -H "content-type: application/json" -d '{"round":41,"tx":"<txSignature>"}'
+node scripts/update.mjs --demo   # build sample data
+node scripts/serve.mjs           # open http://localhost:8080
+node scripts/update.mjs          # fetch the real feeds
+node scripts/selftest.mjs        # run the checks
 ```
 
-## Environment variables
+## A note on using this for meme coins
 
-Set these in your host (Railway: service → Variables). Secrets go here only, never in the repo.
-
-| var | purpose |
-|---|---|
-| `DB_PATH` | Where `data.json` lives. Point it at a persistent volume (e.g. `/data/data.json`) or all data is wiped on every redeploy |
-| `FEE_WALLET` | Public address of the payout wallet. The site counts SOL arriving here as fees |
-| `RPC_URL` | Solana RPC (Helius/QuickNode). The public one is rate-limited |
-| `PAYOUT_SECRET_KEY` | Private key of the payout wallet. Turns on automatic payouts. Use a dedicated wallet |
-| `CONTRACT_ADDRESS` | Coin CA shown at the top. Survives redeploys |
-| `OWNER_WALLET` | Wallet allowed to set the CA from the site (defaults to `ownerWallet` in `config.json`) |
-| `ADMIN_KEY` | Enables `/api/admin/paid` and `/api/admin/delete` (send as `x-admin-key`) |
-
-## Contract address
-
-Either set `CONTRACT_ADDRESS`, or connect the owner wallet on the site: an OWNER bar appears where you can paste or clear the CA. Only the owner wallet can use it, and it can't touch votes or prizes. The saved CA lives in `data.json`, so it needs the volume.
-
-## Rounds
-
-Each round lasts `roundMinutes`. When it ends, the top-voted drawing wins, the round's votes and every other drawing are deleted, and the winner's drawing is kept. The board starts empty each round.
-
-Remove an offensive drawing: `curl -X POST https://YOUR-SITE/api/admin/delete -H "x-admin-key: $ADMIN_KEY" -H "content-type: application/json" -d '{"drawingId":12}'`
-
-## Limits you should know about
-
-- With no token requirement, one person can make many wallets. The per-network limit slows that down but does not stop a determined person. If votes get farmed, add a minimum SOL balance check or go back to requiring a token.
-- The fee tracker counts any SOL sent to `feeWallet`, not only creator fees. Keep that wallet for fees only.
-- Rounds close lazily and on a 5-second timer, so a round can end up to a few seconds late.
-- Storage is a single `data.json`, fine for a modest crowd. Put it on a persistent volume.
-- Check the rules on prizes and giveaways where you and your players live.
-
-## Tests
-
-`npm test` starts the server with short rounds, fake fees and a fake payment sender, then checks login, voting, fee counting, the 15% prize math, one-time payouts and the admin key. It does not touch the network or send real SOL.
-
-## Putting this on GitHub
-
-Create a private repo, then upload everything in this folder (not the zip itself). `.gitignore` already keeps `node_modules` and `data.json` out. Never commit private keys. `PAYOUT_SECRET_KEY` and `ADMIN_KEY` belong only in your host's environment variables.
+The page shows what people are talking about, not what will go up. Real animals in distress, and the people trying to help them, are not a marketing angle, and rescue appeals are often asking for donations, so don't launch a token that looks like one. Using a real person's name or photo, or a brand, can cause legal trouble, and token sales can fall under securities rules depending on where you live. Not financial or legal advice.

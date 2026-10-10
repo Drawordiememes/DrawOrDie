@@ -1,0 +1,89 @@
+name: Update site
+
+on:
+  schedule:
+    - cron: '7 * * * *'     # every hour, at 7 minutes past
+  workflow_dispatch:         # lets you run it by hand from the Actions tab
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Work out the site address
+        env:
+          SITE_URL_VAR: ${{ vars.SITE_URL }}
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          if [ -n "$SITE_URL_VAR" ]; then
+            URL="$SITE_URL_VAR"
+          elif [ "${REPO,,}" = "$OWNER.github.io" ]; then
+            URL="https://$OWNER.github.io/"
+          else
+            URL="https://$OWNER.github.io/$REPO/"
+          fi
+          URL="${URL%/}/"
+          echo "SITE_URL=$URL" >> "$GITHUB_ENV"
+
+      - name: Get the last published data (so we can tell what is new)
+        run: curl -fsSL --max-time 20 "${SITE_URL}data.json?t=$(date +%s)" -o prev.json || rm -f prev.json
+
+      - name: Fetch stories and build data.json
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          NOTIFY_TAGS: ${{ vars.NOTIFY_TAGS }}
+          NOTIFY_EMPTY: ${{ vars.NOTIFY_EMPTY }}
+        run: node scripts/update.mjs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # GitHub switches off scheduled jobs in a public repo after 60 days with no commits.
+  # Once a month this adds an empty commit so the hourly schedule keeps running.
+  keepalive:
+    needs: deploy
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Monthly empty commit
+        run: |
+          if [ "$(date -u +%d%H)" = "1512" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Keep hourly schedule alive" && git push || true
+          fi
